@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Garage Stock — Spare Parts Inventory</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<style>
+  :root{
+    --bg:#15181B; --panel:#1D2124; --panel2:#262B2F; --border:#34393E; --borderSoft:#282D31;
+    --text:#ECEDEA; --textDim:#9AA1A6; --textFaint:#6B7378;
+    --amber:#F2A93B; --steel:#5FA3BD; --red:#E2574C; --green:#6FBE72;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);}
+  #root{min-height:100%;}
+  input:focus, select:focus{border-color:var(--amber) !important;}
+  table{border-collapse:collapse;width:100%;}
+  th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--textFaint);
+     padding:8px 10px;border-bottom:1px solid var(--borderSoft);font-weight:600;}
+  td{padding:10px;border-bottom:1px solid var(--borderSoft);font-size:13.5px;vertical-align:middle;}
+  tr:hover td{background:rgba(255,255,255,0.02);}
+  ::-webkit-scrollbar{width:8px;height:8px;}
+  ::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px;}
+  .navitem{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:8px;cursor:pointer;
+    font-size:13.5px;font-weight:600;color:var(--textDim);}
+  .navitem:hover{background:var(--panel2);color:var(--text);}
+  .navitem.active{background:rgba(242,169,59,0.12);color:var(--amber);}
+  @media print {
+    .no-print{display:none !important;}
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo, useCallback } = React;
+
+const CATEGORIES = ["Engine","Brakes","Electrical","Suspension","Transmission","Body Parts","Filters","Tyres & Tubes","Lubricants","Accessories","Other"];
+
+const C = {
+  panel:"#1D2124", panel2:"#262B2F", border:"#34393E", borderSoft:"#282D31",
+  text:"#ECEDEA", textDim:"#9AA1A6", textFaint:"#6B7378",
+  amber:"#F2A93B", steel:"#5FA3BD", red:"#E2574C", green:"#6FBE72"
+};
+
+function uid(p){ return p+"_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,8); }
+function fmtMoney(n){ return "₹"+Number(n||0).toLocaleString("en-IN",{maximumFractionDigits:0}); }
+function fmtDateTime(iso){ const d=new Date(iso); return d.toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}); }
+
+// ---------- local storage (per-browser) ----------
+function loadParts(){ try{ const v=localStorage.getItem("garage-parts"); return v?JSON.parse(v):[]; }catch(e){ return []; } }
+function saveParts(p){ try{ localStorage.setItem("garage-parts", JSON.stringify(p)); }catch(e){ console.error(e); } }
+function loadTx(){ try{ const v=localStorage.getItem("garage-transactions"); return v?JSON.parse(v):[]; }catch(e){ return []; } }
+function saveTx(t){ try{ localStorage.setItem("garage-transactions", JSON.stringify(t)); }catch(e){ console.error(e); } }
+
+// ---------- tiny icon set (stroke-based, lucide-ish) ----------
+function Icon({ name, size=16, color="currentColor" }) {
+  const s = { width:size, height:size, viewBox:"0 0 24 24", fill:"none", stroke:color, strokeWidth:2, strokeLinecap:"round", strokeLinejoin:"round" };
+  const paths = {
+    dashboard: <><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></>,
+    box: <><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></>,
+    swap: <><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></>,
+    chart: <><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></>,
+    plus: <><path d="M12 5v14"/><path d="M5 12h14"/></>,
+    search: <><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></>,
+    pencil: <><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></>,
+    trash: <><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></>,
+    close: <><path d="M18 6L6 18"/><path d="M6 6l12 12"/></>,
+    alert: <><path d="M10.3 3.9L1.8 18a1 1 0 0 0 .9 1.5h18.6a1 1 0 0 0 .9-1.5L13.7 3.9a1 1 0 0 0-1.7 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></>,
+    printer: <><path d="M6 9V2h12v7"/><rect x="4" y="9" width="16" height="8" rx="1"/><path d="M6 17v5h12v-5"/></>,
+    up: <><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></>,
+    down: <><path d="M12 5v14"/><path d="M19 12l-7 7-7-7"/></>,
+    gauge: <><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M12 2v2"/><path d="M4.9 4.9l1.4 1.4"/><path d="M2 12h2"/><path d="M19.1 4.9l-1.4 1.4"/><path d="M22 12h-2"/><path d="M12 12l3-2"/></>
+  };
+  return <svg {...s}>{paths[name]}</svg>;
+}
+
+function Badge({ children, tone="gray" }) {
+  const map = { steel:{bg:"#1E3038",fg:C.steel}, amber:{bg:"#3A2C10",fg:C.amber}, red:{bg:"#3A1D1A",fg:C.red}, green:{bg:"#1C3320",fg:C.green}, gray:{bg:C.panel2,fg:C.textDim} };
+  const c = map[tone]||map.gray;
+  return <span style={{background:c.bg,color:c.fg,fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:4,letterSpacing:.4,textTransform:"uppercase"}}>{children}</span>;
+}
+
+function StockGaugeBar({ qty, min }) {
+  const max = Math.max(min*2, qty, 1);
+  const pct = Math.min(100,(qty/max)*100);
+  let color = C.green;
+  if (qty<=min) color=C.red; else if (qty<=min*1.5) color=C.amber;
+  return (
+    <div style={{width:84}}>
+      <div style={{height:6,background:C.panel2,borderRadius:3,overflow:"hidden",position:"relative"}}>
+        <div style={{width:pct+"%",height:"100%",background:color,borderRadius:3}} />
+        {min>0 && <div style={{position:"absolute",left:Math.min(100,(min/max)*100)+"%",top:-2,width:2,height:10,background:C.textFaint}} />}
+      </div>
+    </div>
+  );
+}
+
+function HealthGauge({ pct }) {
+  const size=180, cx=size/2, cy=size/2+10, r=78;
+  const startAngle=200, endAngle=-20;
+  const toRad=d=>d*Math.PI/180;
+  const point=(a,rad)=>{ const rr=toRad(a); return [cx+rad*Math.cos(rr), cy-rad*Math.sin(rr)]; };
+  const arcPath=(a1,a2,rad)=>{ const [x1,y1]=point(a1,rad),[x2,y2]=point(a2,rad); const large=Math.abs(a2-a1)>180?1:0; return `M ${x1} ${y1} A ${rad} ${rad} 0 ${large} 0 ${x2} ${y2}`; };
+  const sweep=startAngle-endAngle;
+  const needleAngle=startAngle-(pct/100)*sweep;
+  const [nx,ny]=point(needleAngle, r-14);
+  let color=C.green; if(pct<40) color=C.red; else if(pct<70) color=C.amber;
+  return (
+    <svg width={size} height={size*0.72} viewBox={`0 0 ${size} ${size*0.72}`}>
+      <path d={arcPath(startAngle,endAngle,r)} stroke={C.panel2} strokeWidth={14} fill="none" strokeLinecap="round" />
+      <path d={arcPath(startAngle, startAngle-(pct/100)*sweep, r)} stroke={color} strokeWidth={14} fill="none" strokeLinecap="round" />
+      <line x1={cx} y1={cy} x2={nx} y2={ny} stroke={C.text} strokeWidth={3} strokeLinecap="round" />
+      <circle cx={cx} cy={cy} r={6} fill={C.text} />
+      <text x={cx} y={cy-34} textAnchor="middle" fontSize={26} fontWeight={700} fill={C.text} fontFamily="Oswald, sans-serif">{Math.round(pct)}%</text>
+      <text x={cx} y={cy-14} textAnchor="middle" fontSize={11} fill={C.textDim} letterSpacing="1">STOCK HEALTH</text>
+    </svg>
+  );
+}
+
+function MiniBarChart({ data }) {
+  if (!data.length) return null;
+  const w=680, h=240, padL=36, padB=56, padT=10, padR=10;
+  const max = Math.max(1, ...data.flatMap(d=>[d.In,d.Out]));
+  const groupW = (w-padL-padR)/data.length;
+  const barW = Math.min(26, groupW/3);
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} style={{width:"100%",height:"100%"}}>
+      {[0,0.25,0.5,0.75,1].map((f,i)=>(
+        <line key={i} x1={padL} x2={w-padR} y1={padT+(h-padT-padB)*(1-f)} y2={padT+(h-padT-padB)*(1-f)} stroke={C.borderSoft} />
+      ))}
+      {data.map((d,i)=>{
+        const cx = padL + groupW*i + groupW/2;
+        const hIn = (d.In/max)*(h-padT-padB);
+        const hOut = (d.Out/max)*(h-padT-padB);
+        const base = h-padB;
+        return (
+          <g key={i}>
+            <rect x={cx-barW-2} y={base-hIn} width={barW} height={hIn} fill={C.green} rx={2} />
+            <rect x={cx+2} y={base-hOut} width={barW} height={hOut} fill={C.red} rx={2} />
+            <text x={cx} y={h-padB+16} textAnchor="middle" fontSize={10} fill={C.textDim}
+              transform={`rotate(-20 ${cx} ${h-padB+16})`}>{d.name}</text>
+          </g>
+        );
+      })}
+      <g transform={`translate(${w-140},${padT})`}>
+        <rect width={10} height={10} fill={C.green} rx={2} /><text x={15} y={9} fontSize={11} fill={C.textDim}>Stock in</text>
+        <rect y={16} width={10} height={10} fill={C.red} rx={2} /><text x={15} y={25} fontSize={11} fill={C.textDim}>Stock out</text>
+      </g>
+    </svg>
+  );
+}
+
+function StatCard({ label, value, sub, tone }) {
+  const fg = tone==="red"?C.red:tone==="amber"?C.amber:C.text;
+  return (
+    <div style={{background:C.panel,border:`1px solid ${C.borderSoft}`,borderRadius:10,padding:"14px 16px",flex:1,minWidth:140}}>
+      <div style={{fontSize:11,color:C.textDim,textTransform:"uppercase",letterSpacing:.6,fontWeight:600}}>{label}</div>
+      <div style={{fontSize:26,fontWeight:700,color:fg,fontFamily:"Oswald, sans-serif",marginTop:4}}>{value}</div>
+      {sub && <div style={{fontSize:12,color:C.textFaint,marginTop:2}}>{sub}</div>}
+    </div>
+  );
+}
+
+function Btn({ children, onClick, variant="ghost", style, type="button", disabled }) {
+  const base = {display:"inline-flex",alignItems:"center",gap:6,fontSize:13,fontWeight:600,padding:"8px 14px",borderRadius:7,
+    cursor:disabled?"not-allowed":"pointer",border:"1px solid transparent",opacity:disabled?0.5:1,fontFamily:"Inter, sans-serif"};
+  const variants = {
+    primary:{background:C.amber,color:"#1A1300",border:`1px solid ${C.amber}`},
+    steel:{background:C.steel,color:"#06202A",border:`1px solid ${C.steel}`},
+    ghost:{background:"transparent",color:C.text,border:`1px solid ${C.border}`},
+    danger:{background:"transparent",color:C.red,border:`1px solid ${C.red}`}
+  };
+  return <button type={type} disabled={disabled} onClick={onClick} style={{...base,...variants[variant],...style}}>{children}</button>;
+}
+
+function Field({ label, children }) {
+  return <label style={{display:"block",marginBottom:12}}>
+    <div style={{fontSize:12,color:C.textDim,marginBottom:5,fontWeight:600}}>{label}</div>
+    {children}
+  </label>;
+}
+
+const inputStyle = {width:"100%",background:C.panel2,border:`1px solid ${C.border}`,borderRadius:6,padding:"9px 10px",color:C.text,fontSize:13.5,fontFamily:"Inter, sans-serif",outline:"none",boxSizing:"border-box"};
+
+function Modal({ title, onClose, children, width=480 }) {
+  return (
+    <div className="no-print" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:50,padding:16}}
+      onMouseDown={(e)=>{ if(e.target===e.currentTarget) onClose(); }}>
+      <div style={{background:C.panel,border:`1px solid ${C.border}`,borderRadius:12,width:"100%",maxWidth:width,maxHeight:"88vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1px solid ${C.borderSoft}`,position:"sticky",top:0,background:C.panel,borderRadius:"12px 12px 0 0"}}>
+          <div style={{fontFamily:"Oswald, sans-serif",fontSize:18,fontWeight:600,letterSpacing:.3}}>{title}</div>
+          <button onClick={onClose} style={{background:"none",border:"none",color:C.textDim,cursor:"pointer",padding:4}}><Icon name="close" size={20} /></button>
+        </div>
+        <div style={{padding:20}}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function PartForm({ initial, onSave, onCancel }) {
+  const [form, setForm] = useState(initial || {name:"",partNumber:"",category:CATEGORIES[0],compatibleModels:"",quantity:0,minStock:5,unitPrice:0,supplier:"",location:""});
+  const set = (k,v)=>setForm(f=>({...f,[k]:v}));
+  const submit = (e)=>{ e.preventDefault(); if(!form.name.trim()) return;
+    onSave({...form, quantity:Number(form.quantity)||0, minStock:Number(form.minStock)||0, unitPrice:Number(form.unitPrice)||0}); };
+  return (
+    <form onSubmit={submit}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
+        <Field label="Part name"><input style={inputStyle} value={form.name} onChange={e=>set("name",e.target.value)} placeholder="Front brake pad set" required /></Field>
+        <Field label="Part number / SKU"><input style={{...inputStyle,fontFamily:"JetBrains Mono, monospace"}} value={form.partNumber} onChange={e=>set("partNumber",e.target.value)} placeholder="BRK-0142" /></Field>
+        <Field label="Category"><select style={inputStyle} value={form.category} onChange={e=>set("category",e.target.value)}>{CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}</select></Field>
+        <Field label="Compatible models"><input style={inputStyle} value={form.compatibleModels} onChange={e=>set("compatibleModels",e.target.value)} placeholder="Splendor, Passion Pro" /></Field>
+        <Field label="Quantity in stock"><input type="number" min="0" style={inputStyle} value={form.quantity} onChange={e=>set("quantity",e.target.value)} /></Field>
+        <Field label="Reorder level (min stock)"><input type="number" min="0" style={inputStyle} value={form.minStock} onChange={e=>set("minStock",e.target.value)} /></Field>
+        <Field label="Unit price (₹)"><input type="number" min="0" style={inputStyle} value={form.unitPrice} onChange={e=>set("unitPrice",e.target.value)} /></Field>
+        <Field label="Shelf / rack location"><input style={inputStyle} value={form.location} onChange={e=>set("location",e.target.value)} placeholder="Rack B-3" /></Field>
+        <div style={{gridColumn:"1 / -1"}}><Field label="Supplier"><input style={inputStyle} value={form.supplier} onChange={e=>set("supplier",e.target.value)} placeholder="Sri Balaji Auto Parts" /></Field></div>
+      </div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:8}}>
+        <Btn variant="ghost" onClick={onCancel}>Cancel</Btn>
+        <Btn variant="primary" type="submit">Save part</Btn>
+      </div>
+    </form>
+  );
+}
+
+function StockAdjustForm({ part, type, onSubmit, onCancel }) {
+  const [qty, setQty] = useState(1);
+  const [note, setNote] = useState("");
+  const submit = (e)=>{ e.preventDefault(); const q=Number(qty); if(!q||q<=0) return; if(type==="OUT" && q>part.quantity) return; onSubmit(q,note); };
+  return (
+    <form onSubmit={submit}>
+      <div style={{marginBottom:14,padding:"10px 12px",background:C.panel2,borderRadius:8}}>
+        <div style={{fontWeight:600,fontSize:14}}>{part.name}</div>
+        <div style={{fontSize:12,color:C.textDim,fontFamily:"JetBrains Mono, monospace",marginTop:2}}>{part.partNumber||"—"} · Current stock: {part.quantity}</div>
+      </div>
+      <Field label={type==="IN"?"Quantity received":"Quantity issued"}>
+        <input type="number" min="1" max={type==="OUT"?part.quantity:undefined} style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} autoFocus />
+      </Field>
+      {type==="OUT" && Number(qty)>part.quantity && <div style={{color:C.red,fontSize:12,marginTop:-8,marginBottom:10}}>Only {part.quantity} in stock.</div>}
+      <Field label="Note (optional)"><input style={inputStyle} value={note} onChange={e=>setNote(e.target.value)} placeholder={type==="IN"?"Purchased from supplier":"Sold to customer"} /></Field>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:8}}>
+        <Btn variant="ghost" onClick={onCancel}>Cancel</Btn>
+        <Btn variant={type==="IN"?"steel":"primary"} type="submit">{type==="IN"?"Record stock in":"Record stock out"}</Btn>
+      </div>
+    </form>
+  );
+}
+
+function App() {
+  const [parts, setParts] = useState(() => loadParts());
+  const [tx, setTx] = useState(() => loadTx());
+  const [tab, setTab] = useState("dashboard");
+  const [search, setSearch] = useState("");
+  const [catFilter, setCatFilter] = useState("All");
+  const [partModal, setPartModal] = useState(null);
+  const [stockModal, setStockModal] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [reportPeriod, setReportPeriod] = useState("daily");
+
+  const persistParts = useCallback(next=>{ setParts(next); saveParts(next); },[]);
+  const persistTx = useCallback(next=>{ setTx(next); saveTx(next); },[]);
+
+  const handleSavePart = (form) => {
+    if (form.id) {
+      persistParts(parts.map(p=>p.id===form.id?{...form,updatedAt:new Date().toISOString()}:p));
+    } else {
+      const newPart = {...form, id:uid("part"), updatedAt:new Date().toISOString()};
+      persistParts([newPart, ...parts]);
+      if (newPart.quantity>0) {
+        const t = {id:uid("tx"),partId:newPart.id,partName:newPart.name,type:"IN",quantity:newPart.quantity,note:"Initial stock",date:new Date().toISOString(),balanceAfter:newPart.quantity,unitPrice:newPart.unitPrice};
+        persistTx([t, ...tx]);
+      }
+    }
+    setPartModal(null);
+  };
+
+  const handleDeletePart = (id) => { persistParts(parts.filter(p=>p.id!==id)); setConfirmDelete(null); };
+
+  const handleStockAdjust = (qty, note) => {
+    const { part, type } = stockModal;
+    const delta = type==="IN"?qty:-qty;
+    const newQty = Math.max(0, part.quantity+delta);
+    persistParts(parts.map(p=>p.id===part.id?{...p,quantity:newQty,updatedAt:new Date().toISOString()}:p));
+    const t = {id:uid("tx"),partId:part.id,partName:part.name,type,quantity:qty,note:note||(type==="IN"?"Stock received":"Stock issued"),date:new Date().toISOString(),balanceAfter:newQty,unitPrice:part.unitPrice};
+    persistTx([t, ...tx]);
+    setStockModal(null);
+  };
+
+  const lowStock = useMemo(()=>parts.filter(p=>p.quantity<=p.minStock),[parts]);
+  const totalUnits = useMemo(()=>parts.reduce((s,p)=>s+p.quantity,0),[parts]);
+  const totalValue = useMemo(()=>parts.reduce((s,p)=>s+p.quantity*p.unitPrice,0),[parts]);
+  const healthPct = parts.length ? ((parts.length-lowStock.length)/parts.length)*100 : 100;
+
+  const filteredParts = useMemo(()=>parts.filter(p=>{
+    const ms = !search || p.name.toLowerCase().includes(search.toLowerCase()) || (p.partNumber||"").toLowerCase().includes(search.toLowerCase()) || (p.compatibleModels||"").toLowerCase().includes(search.toLowerCase());
+    const mc = catFilter==="All" || p.category===catFilter;
+    return ms && mc;
+  }),[parts,search,catFilter]);
+
+  const recentTx = tx.slice(0,8);
+
+  const reportRange = useMemo(()=>{
+    const now = new Date(); let start;
+    if (reportPeriod==="daily") start = new Date(now.getFullYear(),now.getMonth(),now.getDate());
+    else if (reportPeriod==="weekly") { start = new Date(now); start.setDate(now.getDate()-6); start = new Date(start.getFullYear(),start.getMonth(),start.getDate()); }
+    else start = new Date(now.getFullYear(), now.getMonth(), 1);
+    return { start, end: now };
+  },[reportPeriod]);
+
+  const reportTx = useMemo(()=>tx.filter(t=>new Date(t.date)>=reportRange.start && new Date(t.date)<=reportRange.end),[tx,reportRange]);
+
+  const reportSummary = useMemo(()=>{
+    const map = {}; let totalIn=0,totalOut=0,valueIn=0,valueOut=0;
+    reportTx.forEach(t=>{
+      if(!map[t.partId]) map[t.partId]={name:t.partName,in:0,out:0};
+      if(t.type==="IN"){ map[t.partId].in+=t.quantity; totalIn+=t.quantity; valueIn+=t.quantity*(t.unitPrice||0); }
+      else { map[t.partId].out+=t.quantity; totalOut+=t.quantity; valueOut+=t.quantity*(t.unitPrice||0); }
+    });
+    return { rows:Object.values(map), totalIn, totalOut, valueIn, valueOut };
+  },[reportTx]);
+
+  const chartData = reportSummary.rows.slice(0,10).map(r=>({name: r.name.length>14?r.name.slice(0,14)+"…":r.name, In:r.in, Out:r.out}));
+  const periodLabel = reportPeriod==="daily"?"Today":reportPeriod==="weekly"?"Last 7 days":"This month";
+
+  const NAV = [
+    {id:"dashboard",label:"Dashboard",icon:"dashboard"},
+    {id:"inventory",label:"Inventory",icon:"box"},
+    {id:"log",label:"Stock log",icon:"swap"},
+    {id:"reports",label:"Reports",icon:"chart"}
+  ];
+
+  return (
+    <div style={{fontFamily:"Inter, sans-serif",background:"#15181B",color:C.text,minHeight:"100vh",display:"flex"}}>
+      <div className="no-print" style={{width:210,background:C.panel,borderRight:`1px solid ${C.borderSoft}`,padding:16,display:"flex",flexDirection:"column",gap:4,flexShrink:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,padding:"4px 6px 20px"}}>
+          <div style={{width:30,height:30,borderRadius:7,background:C.amber,display:"flex",alignItems:"center",justifyContent:"center"}}><Icon name="gauge" size={17} color="#1A1300" /></div>
+          <div>
+            <div style={{fontFamily:"Oswald, sans-serif",fontWeight:700,fontSize:15,letterSpacing:.3,lineHeight:1}}>GARAGE STOCK</div>
+            <div style={{fontSize:10,color:C.textFaint,marginTop:2}}>2-wheeler spares</div>
+          </div>
+        </div>
+        {NAV.map(n=>(
+          <div key={n.id} className={"navitem "+(tab===n.id?"active":"")} onClick={()=>setTab(n.id)}>
+            <Icon name={n.icon} size={16} /> {n.label}
+            {n.id==="dashboard" && lowStock.length>0 && <span style={{marginLeft:"auto",background:C.red,color:"#fff",fontSize:10,fontWeight:700,borderRadius:10,padding:"1px 6px"}}>{lowStock.length}</span>}
+          </div>
+        ))}
+        <div style={{marginTop:"auto",padding:"10px 6px",fontSize:11,color:C.textFaint,borderTop:`1px solid ${C.borderSoft}`}}>{parts.length} parts tracked</div>
+      </div>
+
+      <div style={{flex:1,padding:24,overflowY:"auto",minWidth:0}}>
+
+        {tab==="dashboard" && (
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
+              <div>
+                <div style={{fontFamily:"Oswald, sans-serif",fontSize:22,fontWeight:600}}>Dashboard</div>
+                <div style={{fontSize:13,color:C.textDim,marginTop:2}}>Overview of your spare parts stock</div>
+              </div>
+              <Btn variant="primary" onClick={()=>setPartModal({})}><Icon name="plus" size={15} /> Add part</Btn>
+            </div>
+
+            <div style={{display:"flex",gap:16,marginBottom:20,flexWrap:"wrap"}}>
+              <div style={{background:C.panel,border:`1px solid ${C.borderSoft}`,borderRadius:10,padding:16,display:"flex",alignItems:"center",gap:16}}>
+                <HealthGauge pct={healthPct} />
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:12,flex:1,minWidth:260}}>
+                <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+                  <StatCard label="Total parts" value={parts.length} />
+                  <StatCard label="Total units in stock" value={totalUnits.toLocaleString("en-IN")} />
+                </div>
+                <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+                  <StatCard label="Inventory value" value={fmtMoney(totalValue)} />
+                  <StatCard label="Low stock alerts" value={lowStock.length} tone={lowStock.length?"red":undefined} />
+                </div>
+              </div>
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"1.1fr 1fr",gap:16}}>
+              <div style={{background:C.panel,border:`1px solid ${C.borderSoft}`,borderRadius:10,padding:16}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                  <Icon name="alert" size={16} color={C.red} />
+                  <div style={{fontWeight:700,fontSize:14}}>Low stock — needs reorder</div>
+                </div>
+                {lowStock.length===0 ? <div style={{color:C.textFaint,fontSize:13,padding:"16px 0"}}>Nothing below reorder level. Stock looks healthy.</div> :
+                  lowStock.map(p=>(
+                    <div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${C.borderSoft}`}}>
+                      <div>
+                        <div style={{fontSize:13.5,fontWeight:600}}>{p.name}</div>
+                        <div style={{fontSize:11.5,color:C.textFaint,fontFamily:"JetBrains Mono, monospace"}}>{p.partNumber||"—"} · {p.category}</div>
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        <Badge tone={p.quantity===0?"red":"amber"}>{p.quantity} / min {p.minStock}</Badge>
+                        <Btn variant="steel" onClick={()=>setStockModal({part:p,type:"IN"})}><Icon name="down" size={13} /> Restock</Btn>
+                      </div>
+                    </div>
+                  ))
+                }
+              </div>
+
+              <div style={{background:C.panel,border:`1px solid ${C.borderSoft}`,borderRadius:10,padding:16}}>
+                <div style={{fontWeight:700,fontSize:14,marginBottom:10}}>Recent activity</div>
+                {recentTx.length===0 ? <div style={{color:C.textFaint,fontSize:13,padding:"16px 0"}}>No stock movements recorded yet.</div> :
+                  recentTx.map(t=>(
+                    <div key={t.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:`1px solid ${C.borderSoft}`}}>
+                      <div>
+                        <div style={{fontSize:13,fontWeight:600}}>{t.partName}</div>
+                        <div style={{fontSize:11,color:C.textFaint}}>{fmtDateTime(t.date)} · {t.note}</div>
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:4,color:t.type==="IN"?C.green:C.red,fontWeight:700,fontSize:13}}>
+                        <Icon name={t.type==="IN"?"down":"up"} size={13} /> {t.quantity}
+                      </div>
+                    </div>
+                  ))
+                }
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab==="inventory" && (
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
+              <div>
+                <div style={{fontFamily:"Oswald, sans-serif",fontSize:22,fontWeight:600}}>Inventory</div>
+                <div style={{fontSize:13,color:C.textDim,marginTop:2}}>{filteredParts.length} of {parts.length} parts</div>
+              </div>
+              <Btn variant="primary" onClick={()=>setPartModal({})}><Icon name="plus" size={15} /> Add part</Btn>
+            </div>
+
+            <div style={{display:"flex",gap:10,marginBottom:14}}>
+              <div style={{position:"relative",flex:1,maxWidth:320}}>
+                <span style={{position:"absolute",left:10,top:10,color:C.textFaint}}><Icon name="search" size={14} /></span>
+                <input style={{...inputStyle,paddingLeft:30}} placeholder="Search name, part number, model…" value={search} onChange={e=>setSearch(e.target.value)} />
+              </div>
+              <select style={{...inputStyle,width:170}} value={catFilter} onChange={e=>setCatFilter(e.target.value)}>
+                <option value="All">All categories</option>
+                {CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+
+            <div style={{background:C.panel,border:`1px solid ${C.borderSoft}`,borderRadius:10,overflow:"hidden"}}>
+              {filteredParts.length===0 ? (
+                <div style={{padding:40,textAlign:"center",color:C.textFaint,fontSize:13.5}}>
+                  {parts.length===0?"No parts yet. Add your first spare part to start tracking stock.":"No parts match your search."}
+                </div>
+              ) : (
+                <div style={{overflowX:"auto"}}>
+                  <table>
+                    <thead><tr><th>Part</th><th>Category</th><th>Stock</th><th>Level</th><th>Unit price</th><th>Location</th><th></th></tr></thead>
+                    <tbody>
+                      {filteredParts.map(p=>(
+                        <tr key={p.id}>
+                          <td>
+                            <div style={{fontWeight:600}}>{p.name}</div>
+                            <div style={{fontSize:11,color:C.textFaint,fontFamily:"JetBrains Mono, monospace"}}>{p.partNumber||"—"}</div>
+                          </td>
+                          <td><Badge tone="gray">{p.category}</Badge></td>
+                          <td><span style={{fontWeight:700,color:p.quantity<=p.minStock?C.red:C.text}}>{p.quantity}</span><span style={{color:C.textFaint}}> / min {p.minStock}</span></td>
+                          <td><StockGaugeBar qty={p.quantity} min={p.minStock} /></td>
+                          <td style={{fontFamily:"JetBrains Mono, monospace"}}>{fmtMoney(p.unitPrice)}</td>
+                          <td style={{color:C.textDim}}>{p.location||"—"}</td>
+                          <td>
+                            <div className="no-print" style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+                              <button title="Stock in" onClick={()=>setStockModal({part:p,type:"IN"})} style={{background:C.panel2,border:`1px solid ${C.border}`,borderRadius:6,padding:6,cursor:"pointer",color:C.green}}><Icon name="down" size={14} /></button>
+                              <button title="Stock out" onClick={()=>setStockModal({part:p,type:"OUT"})} style={{background:C.panel2,border:`1px solid ${C.border}`,borderRadius:6,padding:6,cursor:"pointer",color:C.red}}><Icon name="up" size={14} /></button>
+                              <button title="Edit" onClick={()=>setPartModal(p)} style={{background:C.panel2,border:`1px solid ${C.border}`,borderRadius:6,padding:6,cursor:"pointer",color:C.textDim}}><Icon name="pencil" size={14} /></button>
+                              <button title="Delete" onClick={()=>setConfirmDelete(p)} style={{background:C.panel2,border:`1px solid ${C.border}`,borderRadius:6,padding:6,cursor:"pointer",color:C.textDim}}><Icon name="trash" size={14} /></button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {tab==="log" && (
+          <div>
+            <div style={{fontFamily:"Oswald, sans-serif",fontSize:22,fontWeight:600,marginBottom:2}}>Stock log</div>
+            <div style={{fontSize:13,color:C.textDim,marginBottom:16}}>Full history of stock movements</div>
+            <div style={{background:C.panel,border:`1px solid ${C.borderSoft}`,borderRadius:10,overflow:"hidden"}}>
+              {tx.length===0 ? <div style={{padding:40,textAlign:"center",color:C.textFaint,fontSize:13.5}}>No transactions yet.</div> : (
+                <div style={{overflowX:"auto",maxHeight:560,overflowY:"auto"}}>
+                  <table>
+                    <thead><tr><th>Date</th><th>Part</th><th>Type</th><th>Qty</th><th>Balance after</th><th>Note</th></tr></thead>
+                    <tbody>
+                      {tx.map(t=>(
+                        <tr key={t.id}>
+                          <td style={{color:C.textDim,whiteSpace:"nowrap"}}>{fmtDateTime(t.date)}</td>
+                          <td style={{fontWeight:600}}>{t.partName}</td>
+                          <td><Badge tone={t.type==="IN"?"green":"red"}>{t.type==="IN"?"Stock in":"Stock out"}</Badge></td>
+                          <td style={{fontWeight:700}}>{t.quantity}</td>
+                          <td style={{fontFamily:"JetBrains Mono, monospace"}}>{t.balanceAfter}</td>
+                          <td style={{color:C.textDim}}>{t.note}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {tab==="reports" && (
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
+              <div>
+                <div style={{fontFamily:"Oswald, sans-serif",fontSize:22,fontWeight:600}}>Reports</div>
+                <div style={{fontSize:13,color:C.textDim,marginTop:2}}>Stock movement summary — {periodLabel.toLowerCase()}</div>
+              </div>
+              <div className="no-print" style={{display:"flex",gap:8}}>
+                <div style={{display:"flex",background:C.panel2,borderRadius:7,border:`1px solid ${C.border}`,overflow:"hidden"}}>
+                  {[["daily","Daily"],["weekly","Weekly"],["monthly","Monthly"]].map(([id,label])=>(
+                    <button key={id} onClick={()=>setReportPeriod(id)} style={{padding:"8px 14px",fontSize:13,fontWeight:600,cursor:"pointer",border:"none",
+                      background:reportPeriod===id?C.amber:"transparent",color:reportPeriod===id?"#1A1300":C.textDim}}>{label}</button>
+                  ))}
+                </div>
+                <Btn variant="ghost" onClick={()=>window.print()}><Icon name="printer" size={14} /> Print</Btn>
+              </div>
+            </div>
+
+            <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap"}}>
+              <StatCard label="Stock in (units)" value={reportSummary.totalIn} sub={fmtMoney(reportSummary.valueIn)} />
+              <StatCard label="Stock out (units)" value={reportSummary.totalOut} sub={fmtMoney(reportSummary.valueOut)} />
+              <StatCard label="Net change" value={reportSummary.totalIn-reportSummary.totalOut} />
+              <StatCard label="Transactions" value={reportTx.length} />
+            </div>
+
+            {chartData.length>0 && (
+              <div style={{background:C.panel,border:`1px solid ${C.borderSoft}`,borderRadius:10,padding:16,marginBottom:16}}>
+                <div style={{fontWeight:700,fontSize:14,marginBottom:10}}>Movement by part</div>
+                <MiniBarChart data={chartData} />
+              </div>
+            )}
+
+            <div style={{background:C.panel,border:`1px solid ${C.borderSoft}`,borderRadius:10,overflow:"hidden"}}>
+              {reportSummary.rows.length===0 ? <div style={{padding:40,textAlign:"center",color:C.textFaint,fontSize:13.5}}>No stock movement in this period.</div> : (
+                <table>
+                  <thead><tr><th>Part</th><th>Stock in</th><th>Stock out</th><th>Net</th></tr></thead>
+                  <tbody>
+                    {reportSummary.rows.map((r,i)=>(
+                      <tr key={i}>
+                        <td style={{fontWeight:600}}>{r.name}</td>
+                        <td style={{color:C.green}}>{r.in>0?"+"+r.in:"—"}</td>
+                        <td style={{color:C.red}}>{r.out>0?"-"+r.out:"—"}</td>
+                        <td style={{fontWeight:700}}>{r.in-r.out}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {partModal!==null && (
+        <Modal title={partModal.id?"Edit part":"Add spare part"} onClose={()=>setPartModal(null)}>
+          <PartForm initial={partModal.id?partModal:null} onSave={handleSavePart} onCancel={()=>setPartModal(null)} />
+        </Modal>
+      )}
+      {stockModal && (
+        <Modal title={stockModal.type==="IN"?"Stock in":"Stock out"} onClose={()=>setStockModal(null)} width={400}>
+          <StockAdjustForm part={stockModal.part} type={stockModal.type} onSubmit={handleStockAdjust} onCancel={()=>setStockModal(null)} />
+        </Modal>
+      )}
+      {confirmDelete && (
+        <Modal title="Delete part" onClose={()=>setConfirmDelete(null)} width={380}>
+          <div style={{fontSize:13.5,color:C.textDim,marginBottom:18}}>
+            Remove <strong style={{color:C.text}}>{confirmDelete.name}</strong> from inventory? This won't delete its past transaction history.
+          </div>
+          <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+            <Btn variant="ghost" onClick={()=>setConfirmDelete(null)}>Cancel</Btn>
+            <Btn variant="danger" onClick={()=>handleDeletePart(confirmDelete.id)}>Delete part</Btn>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
